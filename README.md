@@ -11,9 +11,9 @@ Audio data augmentation for Puerto Rico rainforest species audio data
 
 ## Usage
 
-* Run the following command inside /code 
+* Execute the following command to run the pipeline 
 
   ```shell
-  python main.py --input audio --train_val_split 0.2 --aug noise_injection --loss masked_loss
+  python ./code/main.py --input audio --train_val_split 0.2 --aug noise_injection --loss masked_loss
   ```
 

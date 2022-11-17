@@ -1,4 +1,4 @@
-import os, sys, getopt
+import os, sys, getopt, time 
 import json
 import numpy as np
 
@@ -29,7 +29,7 @@ def parse():
     Parse command line arguments 
     """
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "train_val_split=", "aug=", "loss="])
+        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "input_path=", "train_val_split=", "output_spec_path=", "aug=", "loss=", "model_path="])
     except getopt.GetoptError as err:
         # print help information and exit:
         print(err)  # will print something like "option -a not recognized"
@@ -37,7 +37,7 @@ def parse():
         sys.exit(2)
     
     input_file_type = None 
-    train_val_split = None 
+    train_val_ratio = None 
     aug_method = None 
     loss_name = None 
     for opt, arg in opts:
@@ -46,16 +46,22 @@ def parse():
             sys.exit()
         elif opt in ("-i", "--input"):
             input_file_type = arg
+        elif opt == "--input_path":
+            input_data_path = arg
         elif opt in ("-s", "--train_val_split"):
-            train_val_split = float(arg)
+            train_val_ratio = float(arg)
         elif opt in ("-a", "--aug"):
             aug_method = arg 
         elif opt in ("-l", "--loss"):
             loss_name = arg
+        elif opt == "--output_spec_path":
+            output_spec_path = arg
+        elif opt == "--model_path":
+            model_path = arg
         else:
             assert False, "unhandled option"
     
-    return input_file_type, train_val_split, aug_method, loss_name
+    return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path
             
             
 
@@ -116,7 +122,7 @@ def train_val_split(data_path, train_split=0.8):
     files_train = files_train_p + files_train_n
     files_val = files_val_p + files_val_n
     
-    return files_train, files_val
+    return files_train, files_val, labels
 
 
 
@@ -126,14 +132,21 @@ def generate_aug_data():
 
 
 def generate_spec_data(path, files_train, files_val):
+    """
+    Generate spectrogram data with audio data 
+    """
     
     # ----- Creat directory -----
     if not os.path.exists(path):
         os.mkdir(path)
-    if not os.path.exists(path + "/train/"):
-        os.mkdir(path + "/train/")
-    if not os.path.exists(path + "/val/"):
-        os.mkdir(path + "/val/")
+    
+    path_train = path + "/train/"
+    path_val = path + "/val/"
+    
+    if not os.path.exists(path_train):
+        os.mkdir(path_train)
+    if not os.path.exists(path_val):
+        os.mkdir(path_val)
 
     path_train_p = path + "/train/p/"
     path_train_n = path + "/train/n/"
@@ -146,11 +159,31 @@ def generate_spec_data(path, files_train, files_val):
         if not os.path.exists(p):
             os.mkdir(p)  
     # --------------------------
+
+    print("Generating spectrogram training data ... ")
+    transfer_data(files_train, path_train)
     
-    # ----- Save data -----
+    print("Generating spectrogram validation data ... ")
+    transfer_data(files_val, path_val)
+    
+    return 
+
+
+
+def transfer_data(files_input, path_output):
+    """
+    files_input: a list of all input data files 
+    path_output: directory for saving output data files 
+
+    Example - transfer_data(files_train_p, path_train_p)
+    """
+
     start = time.time()
 
     for i, file in enumerate(files_input):
+        
+        print(file)
+        sys.exit()
 
         if i % 1000 == 0:
             print(i, " / ", len(files_input))
@@ -167,12 +200,118 @@ def generate_spec_data(path, files_train, files_val):
         sample_data = np.load(file, allow_pickle=False)
         file_output_path = path_output + class_name + "/" + file.split('/')[-1]
         np.save(file_output_path, sample_data)
+
+
+
+def train(files_train, files_val, model_path, loss_name, labels, resize_dim=[224, 224], batch_size=32, 
+          params={}):
+    """
+    Define and train a MobileNetV2 model 
+    """
+
+    # train data generator
+    train_generator = DataGenerator(files_train,
+                                    labels,
+                                    resize_dim=resize_dim,
+                                    batch_size=batch_size)
+
+    # validation data generator
+    val_generator = DataGenerator(files_val,
+                                  labels,
+                                  resize_dim=resize_dim,
+                                  batch_size=batch_size)
+
     
+    conv = MobileNetV2(weights='imagenet', 
+                   include_top=False, 
+                   input_shape=[224, 224, 3])
+
+    for layer in conv.layers:
+        layer.trainable = True
+
+    model = models.Sequential()
+    model.add(conv)
+    model.add(layers.AveragePooling2D((7, 7)))
+    model.add(layers.Flatten())
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(num_classes, activation='sigmoid'))
+
+    optimizer = tf.keras.optimizers.Adam()
+
+    # note: this loss can be used to avoid assumptions about unlabeled classes
+    def masked_loss(y_true, y_pred):
+        return K.mean(K.mean(K.binary_crossentropy(tf.where(tf.math.is_nan(y_true), tf.zeros_like(y_true), y_true),
+                                               tf.multiply(y_pred, tf.cast(tf.logical_not(tf.math.is_nan(y_true)), tf.float32))), axis=-1))
     
+    # Choose loss function 
+    if loss_name == "binary_crossentropy":
+        model.compile(loss='binary_crossentropy', optimizer=optimizer)
+    elif loss_name == "masked_loss":
+        model.compile(loss=masked_loss, optimizer=optimizer)
+    else:
+        assert False, "unhandled option"
+    
+    # Print model summary 
+    print("---------- Model Summary ----------")
+    print(model.summary())
+    print("-----------------------------------")
+    
+    # save model architecture
+    model_out = model_path + "model"
+    model_json = model.to_json()
+    with open(model_out + '.json', "w") as json_file:
+        json_file.write(model_json)
+    with open(model_out + '_classes.json', 'w') as f:
+        json.dump(labels_rev, f)
+    print('Saved model architecture to ', model_path)
+    
+    # Parameters  
+    epochs = params["epochs"]
+    warmup_lr = params["warmup_lr"]
+    warmup_epochs = params["warmup_epochs"]
+    patience = params["patience"]
+    steps_per_epoch = len(train_generator)
+    base_lr = params["base_lr"]
+    hold_base_rate_steps = int(epochs * 0.125 * steps_per_epoch)
+    
+    total_steps = int(epochs * steps_per_epoch)
+    warmup_steps = int(warmup_epochs * steps_per_epoch)
+    
+    # save the best model weights based on validation loss
+    val_chkpt = ModelCheckpoint(filepath=model_out+'_best_val.h5',
+                                save_weights_only=True,
+                                monitor='val_loss',
+                                mode='min',
+                                save_best_only=True,
+                                verbose=1)
+
+    # also save the model weights every 20 epochs
+    reg_chkpt = ModelCheckpoint(filepath=model_out+'{epoch:04d}.h5',
+                                save_weights_only=True,
+                                save_freq=int(steps_per_epoch*20))
+
+    # apply a learning rate schedule
+    cosine_warm_up_lr = WarmUpCosineDecayScheduler(learning_rate_base= base_lr,
+                                                   total_steps= total_steps,
+                                                   warmup_learning_rate= warmup_lr,
+                                                   warmup_steps= warmup_steps,
+                                                   hold_base_rate_steps=hold_base_rate_steps)
+
+    callbacks_list = [val_chkpt, reg_chkpt, cosine_warm_up_lr]
+
+    # Model fitting 
+    model_history = model.fit(train_generator,
+                          steps_per_epoch = len(train_generator),
+                          validation_data = val_generator,
+                          epochs = epochs,
+                          verbose = 1,
+                          callbacks=callbacks_list)
+
+    np.save(model_out + '_history.npy', model_history.history)
+
     return 
 
-def train():
-    return 
+
 
 def evaluate():
     return 
@@ -215,27 +354,58 @@ def change_speed(data, sample_rate):
 if __name__ == "__main__":
     
     # Parse command line arguments 
-    input_file_type, train_val_split, aug_method, loss_name = parse() 
+    print("\n")
+    print("------------- Starting parsing arguments -------------")
+    input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path = parse() 
+    print("------------- Completing parsing arguments -------------")
+    print("\n")
     
-    print(input_file_type, train_val_split, aug_method, loss_name)
-    
-    sys.exit()
     
     # Remove .DS_Store files in data directory 
-    print("------------- Start file removal  -------------")
+    print("\n")
+    print("------------- Starting file removal -------------")
     file_to_remove='.DS_Store'
-    remove_file(audio_data_path)
-    print("------------- File removal completed -------------")
+    remove_file(input_data_path, file_to_remove)
+    print("------------- Completing file removal -------------")
+    print("\n")
 
+    
     # Train validation split 
-    audio_data_path = "/n/home11/yxiang/data/rfcx-harvard-ds/puerto-rico/train/audio/"
-    train_split = 0.8
-    files_train, files_val = train_val_split(audio_data_path, train_split)
+    print("\n")
+    print("---------- Starting train validation split ----------")
+    files_train, files_val, labels = train_val_split(input_data_path, train_val_ratio)
+    print("---------- Completing Train validation split ----------")
+    print("\n")
+    
+    
+    # Generate image data 
+    if aug_method is None:
+        # Generate spectrogram data 
+        print("\n")
+        print("---------- Starting generating spectrogram data ----------")
+        generate_spec_data(output_spec_path, files_train, files_val)
+        print("---------- Completing generating spectrogram data ----------")
+        print("\n")
+        
+    else:
+        # Generate augmented data 
+        pass 
+        
 
-    # Generate augmented data 
-
-
-    # Generate spectrogram data 
-    output_spec_path = "/n/home11/yxiang/data/spec_data/"
+    # Train model 
+    params = {"epochs": 100, 
+              "warmup_lr": 1e-5, 
+              "warmup_epochs": 10, 
+              "patience": 10, 
+              "base_lr": 0.0015}
+    print("\n")
+    print("---------- Starting training model ----------")
+    train(files_train, files_val, model_path, loss_name, labels, params=params)
+    print("---------- Completing training model ----------")
+    print("\n")
+    
+    
+    # Evaluate model 
+    evaluate()
 
 

@@ -13,6 +13,9 @@ from datagen import get_files_and_labels, scalespec, preprocess, DataGenerator
 from learningrate import warmup_cosine_decay, WarmUpCosineDecayScheduler
 from specinput import wave_to_mel_spec, load_audio, params
 
+from audioaug import noise_injection, shift_time, change_pitch, change_speed
+from helpers import remove_file, generate_class_freqs, transfer_data
+
 
 
 def usage():
@@ -62,29 +65,7 @@ def parse():
             assert False, "unhandled option"
     
     return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path
-            
-            
 
-def remove_file(data_path, file_to_remove='.DS_Store'):
-    """
-    Remove unnecessary .DS_Store
-    """
-    queue = os.listdir(data_path)
-
-    while queue:
-        for i in range(len(queue)):
-            file = queue.pop(0)
-            
-            if file.split('/')[-1] == file_to_remove:
-                # Remove target file 
-                os.remove(data_path + file)
-                print("File removed:", data_path + file)
-                continue
-                
-            if os.path.isdir(data_path + file):
-                # Update contents of folder to queue 
-                queue += ['/' + file + '/' + f for f in os.listdir(data_path + file)]
-    
 
 def train_val_split(data_path, train_split=0.8):
     """    
@@ -130,7 +111,6 @@ def generate_aug_data():
     return 
 
 
-
 def generate_spec_data(path, files_train, files_val):
     """
     Generate spectrogram data with audio data 
@@ -161,45 +141,12 @@ def generate_spec_data(path, files_train, files_val):
     # --------------------------
 
     print("Generating spectrogram training data ... ")
-    transfer_data(files_train, path_train)
+    files_train_spec = transfer_data(files_train, path_train, mode="wav_to_npy")
     
     print("Generating spectrogram validation data ... ")
-    transfer_data(files_val, path_val)
+    files_val_spec = transfer_data(files_val, path_val, mode="wav_to_npy")
     
-    return 
-
-
-
-def transfer_data(files_input, path_output):
-    """
-    files_input: a list of all input data files 
-    path_output: directory for saving output data files 
-
-    Example - transfer_data(files_train_p, path_train_p)
-    """
-
-    start = time.time()
-
-    for i, file in enumerate(files_input):
-        
-        print(file)
-        sys.exit()
-
-        if i % 1000 == 0:
-            print(i, " / ", len(files_input))
-            end = time.time()
-            print("time elapsed: ", round(end - start, 2), "s")
-            time.sleep(1)
-            start = end
-
-        class_name = file.split('/')[-2]
-        if not os.path.exists(path_output + class_name):
-            os.mkdir(path_output + class_name)
-
-        # Copy the data file to new path 
-        sample_data = np.load(file, allow_pickle=False)
-        file_output_path = path_output + class_name + "/" + file.split('/')[-1]
-        np.save(file_output_path, sample_data)
+    return files_train_spec, files_val_spec
 
 
 
@@ -319,34 +266,7 @@ def evaluate():
 
 # -------------------------------------- Functions for data augmentation --------------------------------------
 
-def noise_injection(data, sample_rate):
-    # noize_factor random between 0.001 to 0.005
-    noise_factor = np.random.uniform(0.001, 0.005)
-    noise = np.random.randn(len(data))
-    augmented_data = data + noise_factor * noise
-    # Cast back to same data type
-    augmented_data = augmented_data.astype(type(data[0]))
-    return augmented_data
 
-def shift_time(data, sampling_rate):
-    #shift time between 0.1 to 1 second
-    shift_max= np.random.uniform(0.1, 1)
-    shift = int(np.round(sampling_rate * shift_max)) # np.random.randint(
-    direction = np.random.randint(0, 2)
-    if direction == 1:
-        shift = -shift
-    augmented_data = np.roll(data, shift)
-    return augmented_data
-
-def change_pitch(data, sample_rate):
-    n_step = np.random.uniform(-2,2)
-    augmented_data = librosa.effects.pitch_shift(y=data, sr=sample_rate, n_steps=n_step)
-    return augmented_data
-
-def change_speed(data, sample_rate):
-    speed_factor= np.random.uniform(0.75, 1.25) 
-    augmented_data = librosa.effects.time_stretch(data, speed_factor)
-    return augmented_data
 
 # --------------------------------------------------------------------------------------------------------------
 
@@ -370,10 +290,19 @@ if __name__ == "__main__":
     print("\n")
 
     
+    # Generate class-freqs.npy 
+    print("\n")
+    print("------------- Starting generating class-freqs.npy -------------")
+    csv_path = input_data_path + "/class-meta.csv"
+    generate_class_freqs(csv_path)
+    print("------------- Completing generating class-freqs.npy -------------")
+    print("\n")
+    
+    
     # Train validation split 
     print("\n")
     print("---------- Starting train validation split ----------")
-    files_train, files_val, labels = train_val_split(input_data_path, train_val_ratio)
+    files_train, files_val, labels = train_val_split(input_data_path + "/audio/", train_val_ratio)
     print("---------- Completing Train validation split ----------")
     print("\n")
     
@@ -383,7 +312,7 @@ if __name__ == "__main__":
         # Generate spectrogram data 
         print("\n")
         print("---------- Starting generating spectrogram data ----------")
-        generate_spec_data(output_spec_path, files_train, files_val)
+        files_train_spec, files_val_spec = generate_spec_data(output_spec_path, files_train, files_val)
         print("---------- Completing generating spectrogram data ----------")
         print("\n")
         
@@ -400,10 +329,12 @@ if __name__ == "__main__":
               "base_lr": 0.0015}
     print("\n")
     print("---------- Starting training model ----------")
-    train(files_train, files_val, model_path, loss_name, labels, params=params)
+    train(files_train_spec, files_val_spec, model_path, loss_name, labels, params=params)
     print("---------- Completing training model ----------")
     print("\n")
     
+    print(files_train_spec)
+    print(files_val_spec)
     
     # Evaluate model 
     evaluate()

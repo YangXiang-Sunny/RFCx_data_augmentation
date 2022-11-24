@@ -5,12 +5,6 @@ from sklearn.model_selection import train_test_split
 from tensorflow.keras.utils import Sequence
 from specinput import params
 
-if os.path.exists('./class-freqs.npy'):
-    spf = np.load('./class-freqs.npy')
-    spf = {i:[j,k] for (i,j,k) in spf}
-else:
-    print('Cannot find class-freqs.npy. Please generate the file using get-class-frequencies.ipynb')
-
 
 def get_files_and_labels(data_dir, train_split=None, classes=None, random_state=None):
     """Gathers file paths for each class in a directory and optionally splits them into train/test portions
@@ -260,6 +254,13 @@ def cutmix(X, y, ids, prob = 1.0):
     """
     # input X - is a batch of batchs of size [n,height,width,channels]
     # output - a batch of batchs with cutmix applied
+    
+    if os.path.exists('./class-freqs.npy'):
+        spf = np.load('./class-freqs.npy')
+        spf = {i:[j,k] for (i,j,k) in spf}
+    else:
+        print('Cannot find class-freqs.npy. Please generate the file using get-class-frequencies.ipynb')
+    
     batch = np.copy(X)
     labs = np.copy(y)
     for j in range(batch.shape[0]):

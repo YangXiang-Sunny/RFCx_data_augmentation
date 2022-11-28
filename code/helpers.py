@@ -5,6 +5,7 @@ import numpy as np
 import librosa
 
 from specinput import wave_to_mel_spec, load_audio, params
+from datagen import get_files_and_labels
 
 
 def remove_file(data_path, file_to_remove='.DS_Store'):
@@ -103,3 +104,38 @@ def transfer_data(files_input, path_output, mode="npy_to_npy"):
             assert False, "unhandled mode"
         
     return files_output 
+
+
+def get_spec_data(data_path):
+    """
+    Grab train-val split spectrogram data 
+    """
+    class_list = os.listdir(data_path + '/train/p/')
+
+    # generate positive train file paths
+    files_train_p, _, labels = get_files_and_labels(data_path + '/train/p/', 
+                                                    train_split = 1,
+                                                    classes = class_list)
+
+    # generate negative train file paths
+    files_train_n, _, labels_train_n = get_files_and_labels(data_path + '/train/n/',
+                                                            train_split = 1,
+                                                            classes = class_list) 
+    
+    # generate positive validation file paths
+    files_val_p, _, labels_val_p = get_files_and_labels(data_path + '/val/p/',
+                                                        train_split = 1,
+                                                        classes = class_list)
+
+    # generate negative train file paths
+    files_val_n, _, labels_val_n = get_files_and_labels(data_path + '/val/n/',
+                                                        train_split = 1,
+                                                        classes = class_list) 
+    
+    files_train_n = [i for i in files_train_n if i.split('/')[-2] in list(labels.keys())]
+    files_val_n = [i for i in files_val_n if i.split('/')[-2] in list(labels.keys())]
+    
+    files_train = files_train_p + files_train_n 
+    files_val = files_val_p + files_val_n 
+    
+    return files_train, files_val, labels 

@@ -14,7 +14,7 @@ from learningrate import warmup_cosine_decay, WarmUpCosineDecayScheduler
 from specinput import wave_to_mel_spec, load_audio, params
 
 from audioaug import noise_injection, shift_time, change_pitch, change_speed
-from helpers import remove_file, generate_class_freqs, transfer_data
+from helpers import remove_file, generate_class_freqs, transfer_data, get_spec_data
 
 
 
@@ -43,12 +43,16 @@ def parse():
     train_val_ratio = None 
     aug_method = None 
     loss_name = None 
+    output_spec_path = None 
+    model_path = None 
+    
     for opt, arg in opts:
         if opt in ("-h", "--help"):
             usage()
             sys.exit()
         elif opt in ("-i", "--input"):
             input_file_type = arg
+            assert input_file_type in ("audio", "spec")
         elif opt == "--input_path":
             input_data_path = arg
         elif opt in ("-s", "--train_val_split"):
@@ -97,14 +101,13 @@ def train_val_split(data_path, train_split=0.8):
                                                                 random_state=42,
                                                                 classes=class_list) 
     
-    labels_rev = dict((v,k) for (k,v) in labels.items())
+#     labels_rev = dict((v,k) for (k,v) in labels.items())
     files_train_n = [i for i in files_train_n if i.split('/')[-2] in list(labels.keys())]
     
     files_train = files_train_p + files_train_n
     files_val = files_val_p + files_val_n
     
     return files_train, files_val, labels
-
 
 
 def generate_aug_data():
@@ -167,7 +170,8 @@ def train(files_train, files_val, model_path, loss_name, labels, resize_dim=[224
                                   labels,
                                   resize_dim=resize_dim,
                                   batch_size=batch_size)
-
+    
+    num_classes = len(labels)
     
     conv = MobileNetV2(weights='imagenet', 
                    include_top=False, 
@@ -204,10 +208,14 @@ def train(files_train, files_val, model_path, loss_name, labels, resize_dim=[224
     print("-----------------------------------")
     
     # save model architecture
+    if not os.path.exists(model_path):
+        os.mkdir(model_path)
+        print("Created folder: ", model_path)
     model_out = model_path + "model"
     model_json = model.to_json()
     with open(model_out + '.json', "w") as json_file:
         json_file.write(model_json)
+    labels_rev = dict((v,k) for (k,v) in labels.items())
     with open(model_out + '_classes.json', 'w') as f:
         json.dump(labels_rev, f)
     print('Saved model architecture to ', model_path)
@@ -282,43 +290,64 @@ if __name__ == "__main__":
     
     
     # Remove .DS_Store files in data directory 
+#     if input_data_path is not None:
     print("\n")
     print("------------- Starting file removal -------------")
     file_to_remove='.DS_Store'
     remove_file(input_data_path, file_to_remove)
     print("------------- Completing file removal -------------")
     print("\n")
-
-    
-    # Generate class-freqs.npy 
-    print("\n")
-    print("------------- Starting generating class-freqs.npy -------------")
-    csv_path = input_data_path + "/class-meta.csv"
-    generate_class_freqs(csv_path)
-    print("------------- Completing generating class-freqs.npy -------------")
-    print("\n")
+#     else:
+#         print("\n")
+#         print("Skip file removal")
+#         print("\n")
     
     
-    # Train validation split 
-    print("\n")
-    print("---------- Starting train validation split ----------")
-    files_train, files_val, labels = train_val_split(input_data_path + "/audio/", train_val_ratio)
-    print("---------- Completing Train validation split ----------")
-    print("\n")
     
     
-    # Generate image data 
-    if aug_method is None:
-        # Generate spectrogram data 
+    
+    if input_file_type == "audio":
+        
+        # Generate class-freqs.npy 
         print("\n")
-        print("---------- Starting generating spectrogram data ----------")
-        files_train_spec, files_val_spec = generate_spec_data(output_spec_path, files_train, files_val)
-        print("---------- Completing generating spectrogram data ----------")
+        print("------------- Starting generating class-freqs.npy -------------")
+        csv_path = input_data_path + "/class-meta.csv"
+        generate_class_freqs(csv_path)
+        print("------------- Completing generating class-freqs.npy -------------")
         print("\n")
         
+        # Train validation split 
+        print("\n")
+        print("---------- Starting train validation split ----------")
+        files_train, files_val, labels = train_val_split(input_data_path + "/audio/", train_val_ratio)
+        print("---------- Completing Train validation split ----------")
+        print("\n")
+
+        # Generate image data 
+        if aug_method is None:
+            # Generate spectrogram data 
+            print("\n")
+            print("---------- Start generating spectrogram data ----------")
+            files_train_spec, files_val_spec = generate_spec_data(output_spec_path, files_train, files_val)
+            print("---------- Complete generating spectrogram data ----------")
+            print("\n")
+        else:
+            # Generate augmented data 
+            pass 
+    
+    elif input_file_type == "spec":
+        print("\n")
+        print("---------- Start getting spectrogram data ----------")
+        files_train_spec, files_val_spec, labels = get_spec_data(input_data_path)
+        print("---------- Complete getting spectrogram data ----------")
+        print("\n")
+    
     else:
-        # Generate augmented data 
-        pass 
+        assert False, "unhandled input data type"
+        
+    
+    print(files_train_spec)
+    print(files_val_spec)
         
 
     # Train model 
@@ -332,9 +361,7 @@ if __name__ == "__main__":
     train(files_train_spec, files_val_spec, model_path, loss_name, labels, params=params)
     print("---------- Completing training model ----------")
     print("\n")
-    
-    print(files_train_spec)
-    print(files_val_spec)
+
     
     # Evaluate model 
     evaluate()

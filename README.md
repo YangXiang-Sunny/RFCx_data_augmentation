@@ -11,7 +11,8 @@ Audio data augmentation for Puerto Rico rainforest species audio data
 
 ## Usage
 
-* Design doc: https://docs.google.com/document/d/1Fxcv6K84TplhNJIzEOL_pvuI2S2_y8KVa4ERp4DwUfo/edit?usp=sharing
+* Design doc 
+	* https://docs.google.com/document/d/1Fxcv6K84TplhNJIzEOL_pvuI2S2_y8KVa4ERp4DwUfo/edit?usp=sharing
 
 * Execute the following command to run the pipeline 
 

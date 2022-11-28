@@ -8,13 +8,14 @@ import tensorflow.keras.models as models
 import tensorflow.keras.layers as layers
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback
+from keras.models import model_from_json
 
 from datagen import get_files_and_labels, scalespec, preprocess, DataGenerator
 from learningrate import warmup_cosine_decay, WarmUpCosineDecayScheduler
 from specinput import wave_to_mel_spec, load_audio, params
 
 from audioaug import noise_injection, shift_time, change_pitch, change_speed
-from helpers import remove_file, generate_class_freqs, transfer_data, get_spec_data
+from helpers import remove_file, generate_class_freqs, transfer_data, get_spec_data, evaluate_model
 
 
 
@@ -32,7 +33,7 @@ def parse():
     Parse command line arguments 
     """
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "input_path=", "train_val_split=", "output_spec_path=", "aug=", "loss=", "model_path="])
+        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "input_path=", "train_val_split=", "output_spec_path=", "aug=", "loss=", "model_path=", "skip_train"])
     except getopt.GetoptError as err:
         # print help information and exit:
         print(err)  # will print something like "option -a not recognized"
@@ -45,6 +46,7 @@ def parse():
     loss_name = None 
     output_spec_path = None 
     model_path = None 
+    skip_train = False # By default we do not skip model training 
     
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -65,10 +67,12 @@ def parse():
             output_spec_path = arg
         elif opt == "--model_path":
             model_path = arg
+        elif opt == "--skip_train":
+            skip_train = True
         else:
             assert False, "unhandled option"
     
-    return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path
+    return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train
 
 
 def train_val_split(data_path, train_split=0.8):
@@ -268,15 +272,49 @@ def train(files_train, files_val, model_path, loss_name, labels, resize_dim=[224
 
 
 
-def evaluate():
-    return 
+def evaluate(model_path, files_train_spec, files_val_spec, labels, batch_size=32): 
+    
+    # Load model 
+    model_architecture_path = model_path + '/model.json'
+    model_weight_path = model_path + '/model_best_val.h5' # path of model
+    model = model_from_json(open(model_architecture_path).read()) # load architecture
+    model.load_weights(model_weight_path) # load weights
 
+#     # Load classes 
+#     class_dict = json.load(open(model_path+"model_classes.json"))
+#     class_list = list(class_dict.values())
+#     len(class_list) # Number of classes
+    
+    # Create data generators 
+    resize_dim = [224, 224] # desired shape of generated images
+    # train data generator
+    train_generator = DataGenerator(files_train_spec,
+                                    labels,
+                                    resize_dim=resize_dim,
+                                    batch_size=batch_size)
+    # validation data generator
+    val_generator = DataGenerator(files_val_spec,
+                                  labels,
+                                  resize_dim=resize_dim,
+                                  batch_size=batch_size)
+    
+    # Evaluate on train set 
+    overall_accuracy_train, TPR_train, TNR_train, MAP_train, precision_train = evaluate_model(model, train_generator)
+    print("overall accuracy on training set:", accuracy_train)
+    print("True positive rate (TPR) / Recall on training set: ", TPR_train )
+    print("True negative rate (TNR) / Specificity on training set: ", TNR_train )
+    print("MAP on training set: ", MAP_train )
+    print("Precision on training set: ", precision_train )
+    
+    # Evaluate on validation set
+    overall_accuracy_val, TPR_val, TNR_val, MAP_val, precision_val = evaluate_model(model, val_generator)
+    print("overall accuracy on validation set :", accuracy_val)
+    print("True positive rate (TPR) / Recall on validation set: ", TPR_val )
+    print("True negative rate (TNR) / Specificity on validation set: ", TNR_val )
+    print("MAP on validation set: ", MAP_val )
+    print("Precision on validation set: ", precision_val )
 
-# -------------------------------------- Functions for data augmentation --------------------------------------
-
-
-
-# --------------------------------------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------------------------
 
 
 if __name__ == "__main__":
@@ -284,26 +322,18 @@ if __name__ == "__main__":
     # Parse command line arguments 
     print("\n")
     print("------------- Starting parsing arguments -------------")
-    input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path = parse() 
+    input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train = parse() 
     print("------------- Completing parsing arguments -------------")
     print("\n")
     
     
     # Remove .DS_Store files in data directory 
-#     if input_data_path is not None:
     print("\n")
-    print("------------- Starting file removal -------------")
+    print("------------- Starting file removal (Potential unnecessary .DS_Store files generated by Macbook) -------------")
     file_to_remove='.DS_Store'
     remove_file(input_data_path, file_to_remove)
     print("------------- Completing file removal -------------")
-    print("\n")
-#     else:
-#         print("\n")
-#         print("Skip file removal")
-#         print("\n")
-    
-    
-    
+    print("\n")    
     
     
     if input_file_type == "audio":
@@ -345,25 +375,25 @@ if __name__ == "__main__":
     else:
         assert False, "unhandled input data type"
         
-    
-    print(files_train_spec)
-    print(files_val_spec)
-        
 
-    # Train model 
-    params = {"epochs": 100, 
-              "warmup_lr": 1e-5, 
-              "warmup_epochs": 10, 
-              "patience": 10, 
-              "base_lr": 0.0015}
-    print("\n")
-    print("---------- Starting training model ----------")
-    train(files_train_spec, files_val_spec, model_path, loss_name, labels, params=params)
-    print("---------- Completing training model ----------")
-    print("\n")
+    if not skip_train: 
+        # Train model 
+        params = {"epochs": 100, 
+                  "warmup_lr": 1e-5, 
+                  "warmup_epochs": 10, 
+                  "patience": 10, 
+                  "base_lr": 0.0015}
+        print("\n")
+        print("---------- Start training model ----------")
+        train(files_train_spec, files_val_spec, model_path, loss_name, labels, params=params)
+        print("---------- Complete training model ----------")
+        print("\n")
 
     
     # Evaluate model 
-    evaluate()
+    print("\n")
+    print("---------- Start evaluating model ----------")
+    evaluate(model_path, files_train_spec, files_val_spec, labels)
+    print("---------- Complete evaluating model ----------")
 
 

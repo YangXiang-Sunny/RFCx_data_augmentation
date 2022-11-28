@@ -7,6 +7,8 @@ import librosa
 from specinput import wave_to_mel_spec, load_audio, params
 from datagen import get_files_and_labels
 
+from sklearn.metrics import average_precision_score
+
 
 def remove_file(data_path, file_to_remove='.DS_Store'):
     """
@@ -139,3 +141,98 @@ def get_spec_data(data_path):
     files_val = files_val_p + files_val_n 
     
     return files_train, files_val, labels 
+
+
+def evaluate_model(model, data_generator):
+    
+    # Get predicted probability and labels
+    
+    print("Start calculating predicted probability and labels ......")
+    
+    pred_prob_all = []
+    idxes = []
+
+    for i in range(len(data_generator)):
+
+        print("processing ", i, '/', len(data_generator))
+
+        pred_prob_one_batch = model.predict(data_generator[i][0])
+        pred_label_one_bacth = 1 * (pred_prob_one_batch > 0.5)
+
+        pred_prob_all.append(pred_prob_one_batch)
+
+        for i in range(pred_label_one_bacth.shape[0]):
+            idx = np.where(pred_label_one_bacth[i] != 0)[0]
+            if not idx.any():
+                idxes.append(-1)
+            else:
+                idxes.append(idx[0])
+
+    pred_prob_mat = np.vstack(pred_prob_all)
+    
+    # Get true labels 
+    
+    print("Start getting true labels ......")
+    
+    labels = []
+    binary_labels_all = []
+
+    for i, train in enumerate(data_generator):
+        print("processing ", i, "/", len(data_generator))
+
+        train = train[1]
+        binary_labels_all.append(train)
+
+        for i in range(pred_label_one_bacth.shape[0]):
+            idx = np.where(train[i] != 0)[0]
+            if not idx.any():
+                labels.append(-1)
+            else:
+                labels.append(idx[0])
+
+
+    binary_labels_mat = np.vstack(binary_labels_all)
+    
+    # Calcualte TPR and TNR
+    
+    print("Start calculating metrics ......")
+
+    mislabel_count = 0
+    negative_count = 0
+    positive_count = 0
+    negative_mislabel_count = 0
+    positive_mislabel_count = 0
+    N = len(idxes)
+
+    for x, y in zip(idxes, labels):
+        if y == -1:
+            negative_count += 1
+        else:
+            positive_count += 1
+
+        if x != y:
+            mislabel_count += 1
+            if y == -1:
+                negative_mislabel_count += 1
+            else:
+                positive_mislabel_count += 1
+    
+    overall_accuracy = (N - mislabel_count) / N
+    TPR = (positive_count - positive_mislabel_count) / positive_count
+    TNR = (negative_count - negative_mislabel_count) / negative_count 
+    MAP = average_precision_score(binary_labels_mat, pred_prob_mat)
+
+    TP = positive_count - positive_mislabel_count
+    FP = negative_mislabel_count
+    precision = TP / (TP + FP)
+    
+    return overall_accuracy, TPR, TNR, MAP, precision
+
+#     print("overall accuracy :", (N - mislabel_count) / N)
+#     print("True positive rate (TPR) / Recall: ", (positive_count - positive_mislabel_count) / positive_count )
+#     print("True negative rate (TNR) / Specificity: ", (negative_count - negative_mislabel_count) / negative_count )
+
+#     # Calculate mean average precision (MAP)
+#     print("MAP: ", average_precision_score(binary_labels_mat, pred_prob_mat))
+    
+    

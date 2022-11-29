@@ -299,7 +299,7 @@ def evaluate(model_path, files_train_spec, files_val_spec, labels, batch_size=32
                                   batch_size=batch_size)
     
     # Evaluate on train set 
-    overall_accuracy_train, TPR_train, TNR_train, MAP_train, precision_train = evaluate_model(model, train_generator)
+    accuracy_train, TPR_train, TNR_train, MAP_train, precision_train = evaluate_model(model, train_generator)
     print("overall accuracy on training set:", accuracy_train)
     print("True positive rate (TPR) / Recall on training set: ", TPR_train )
     print("True negative rate (TNR) / Specificity on training set: ", TNR_train )
@@ -307,7 +307,7 @@ def evaluate(model_path, files_train_spec, files_val_spec, labels, batch_size=32
     print("Precision on training set: ", precision_train )
     
     # Evaluate on validation set
-    overall_accuracy_val, TPR_val, TNR_val, MAP_val, precision_val = evaluate_model(model, val_generator)
+    accuracy_val, TPR_val, TNR_val, MAP_val, precision_val = evaluate_model(model, val_generator)
     print("overall accuracy on validation set :", accuracy_val)
     print("True positive rate (TPR) / Recall on validation set: ", TPR_val )
     print("True negative rate (TNR) / Specificity on validation set: ", TNR_val )

@@ -14,9 +14,7 @@ from datagen import get_files_and_labels, scalespec, preprocess, DataGenerator
 from learningrate import warmup_cosine_decay, WarmUpCosineDecayScheduler
 from specinput import wave_to_mel_spec, load_audio, params
 
-from audioaug import noise_injection, shift_time, change_pitch, change_speed
 from helpers import remove_file, generate_class_freqs, transfer_data, get_spec_data, evaluate_model
-
 
 
 def usage():
@@ -114,33 +112,48 @@ def train_val_split(data_path, train_split=0.8):
     return files_train, files_val, labels
 
 
-def generate_aug_data():
-    return 
+# def generate_aug_data(output_spec_path, files_train, files_val, aug_method):
+#     """
+#     Generate augmented data with audio augmentation methods
+#     """
+    
+#     # ----- Creat directory -----
+#     path_train = path + "/train/"
+#     path_val = path + "/val/"
+    
+#     path_train_p = path + "/train/p/"
+#     path_train_n = path + "/train/n/"
+#     path_val_p = path + "/val/p/"
+#     path_val_n = path + "/val/n/"
+
+#     path_all = [path, path_train, path_val, path_train_p, path_train_n, path_val_p, path_val_n]
+
+#     for p in path_all:
+#         if not os.path.exists(p):
+#             os.mkdir(p)  
+#     # --------------------------
+    
+#     aug_method_map = {"noise_injection": noise_injection, "shift_time": shift_time, 
+#                       "change_pitch": change_pitch, "change_speed": change_speed}
+    
+#     return 
 
 
-def generate_spec_data(path, files_train, files_val):
+def generate_spec_data(path, files_train, files_val, aug_method=None):
     """
     Generate spectrogram data with audio data 
     """
     
     # ----- Creat directory -----
-    if not os.path.exists(path):
-        os.mkdir(path)
-    
     path_train = path + "/train/"
     path_val = path + "/val/"
     
-    if not os.path.exists(path_train):
-        os.mkdir(path_train)
-    if not os.path.exists(path_val):
-        os.mkdir(path_val)
-
     path_train_p = path + "/train/p/"
     path_train_n = path + "/train/n/"
     path_val_p = path + "/val/p/"
     path_val_n = path + "/val/n/"
 
-    path_all = [path_train_p, path_train_n, path_val_p, path_val_n]
+    path_all = [path, path_train, path_val, path_train_p, path_train_n, path_val_p, path_val_n]
 
     for p in path_all:
         if not os.path.exists(p):
@@ -148,10 +161,10 @@ def generate_spec_data(path, files_train, files_val):
     # --------------------------
 
     print("Generating spectrogram training data ... ")
-    files_train_spec = transfer_data(files_train, path_train, mode="wav_to_npy")
+    files_train_spec = transfer_data(files_train, path_train, mode="wav_to_npy", aug_method=aug_method)
     
     print("Generating spectrogram validation data ... ")
-    files_val_spec = transfer_data(files_val, path_val, mode="wav_to_npy")
+    files_val_spec = transfer_data(files_val, path_val, mode="wav_to_npy", aug_method=aug_method)
     
     return files_train_spec, files_val_spec
 
@@ -363,7 +376,12 @@ if __name__ == "__main__":
             print("\n")
         else:
             # Generate augmented data 
-            pass 
+            print("\n")
+            print("---------- Start generating augmented data ----------")
+            print("Augmentation methods: ", aug_method)
+            files_train_spec, files_val_spec = generate_spec_data(output_spec_path, files_train, files_val, aug_method)
+            print("---------- Complete generating augmented data ----------")
+            print("\n")
     
     elif input_file_type == "spec":
         print("\n")

@@ -9,6 +9,9 @@ from datagen import get_files_and_labels
 
 from sklearn.metrics import average_precision_score
 
+from audioaug import noise_injection, shift_time, change_pitch, change_speed
+from specaug import freq_mask, time_mask, loud
+
 
 def remove_file(data_path, file_to_remove='.DS_Store'):
     """
@@ -56,7 +59,7 @@ def generate_class_freqs(path):
     np.save('class-freqs.npy', spf)
 
     
-def transfer_data(files_input, path_output, mode="npy_to_npy"):
+def transfer_data(files_input, path_output, mode="npy_to_npy", aug_method=None):
     """
     files_input: a list of all input data files 
     path_output: directory for saving output data files 
@@ -64,6 +67,11 @@ def transfer_data(files_input, path_output, mode="npy_to_npy"):
 
     Example - transfer_data(files_train_p, path_train_p)
     """
+    
+    audio_aug_method_map = {"noise_injection": noise_injection, "shift_time": shift_time, 
+                            "change_pitch": change_pitch, "change_speed": change_speed}
+    spec_aug_method_map = {"freq_mask": freq_mask, "time_mask": time_mask, "loud": loud}
+    
     files_output = []
 
     start = time.time()
@@ -98,7 +106,18 @@ def transfer_data(files_input, path_output, mode="npy_to_npy"):
                 continue
             data, sample_rate = load_audio(file)
             file_output_path = path_output + "/" + p_or_n + "/" + class_name + "/" + file.split('/')[-1][0:-4] + ".npy"
-            spec_data = wave_to_mel_spec(data)
+            
+            if aug_method in audio_aug_method_map: 
+                # Audio augmentation 
+                aug_data = audio_aug_method_map[aug_method](data, sample_rate)
+                spec_data = wave_to_mel_spec(aug_data)
+            elif aug_method in spec_aug_method_map:
+                # Spectrogram augmentation 
+                spec_data = wave_to_mel_spec(data)
+                spec_data = spec_aug_method_map[aug_method](spec_data)
+            else:
+                spec_data = wave_to_mel_spec(data)
+                
             np.save(file_output_path, spec_data)
             files_output.append(file_output_path)
 #             print("Saved file: ", file_output_path) 

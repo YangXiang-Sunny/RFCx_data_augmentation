@@ -118,33 +118,6 @@ def train_val_split(data_path, train_split=0.8):
     return files_train, files_val, labels
 
 
-# def generate_aug_data(output_spec_path, files_train, files_val, aug_method):
-#     """
-#     Generate augmented data with audio augmentation methods
-#     """
-    
-#     # ----- Creat directory -----
-#     path_train = path + "/train/"
-#     path_val = path + "/val/"
-    
-#     path_train_p = path + "/train/p/"
-#     path_train_n = path + "/train/n/"
-#     path_val_p = path + "/val/p/"
-#     path_val_n = path + "/val/n/"
-
-#     path_all = [path, path_train, path_val, path_train_p, path_train_n, path_val_p, path_val_n]
-
-#     for p in path_all:
-#         if not os.path.exists(p):
-#             os.mkdir(p)  
-#     # --------------------------
-    
-#     aug_method_map = {"noise_injection": noise_injection, "shift_time": shift_time, 
-#                       "change_pitch": change_pitch, "change_speed": change_speed}
-    
-#     return 
-
-
 def generate_spec_data(path, files_train, files_val, aug_method=None):
     """
     Generate spectrogram data with audio data 
@@ -173,7 +146,6 @@ def generate_spec_data(path, files_train, files_val, aug_method=None):
     files_val_spec = transfer_data(files_val, path_val, mode="wav_to_npy", aug_method=aug_method)
     
     return files_train_spec, files_val_spec
-
 
 
 def train(files_train, files_val, model_path, loss_name, labels, resize_dim=[224, 224], batch_size=32, 

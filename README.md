@@ -7,7 +7,7 @@ Audio data augmentation for Puerto Rico rainforest species audio data
 
 ## Requirements
 
-The pipeline requires some Python packages to run, including `tensorflow`, `librosa` and `nlpaug`. The dependencies are stored in environment.yml, and it could be activated with 
+The pipeline requires some Python packages to run, including `tensorflow`, `librosa` and `nlpaug`. The dependencies are stored in `environment.yml`, and it could be activated with the following command. 
 ```shell
 conda env create -f environment.yml
 ```

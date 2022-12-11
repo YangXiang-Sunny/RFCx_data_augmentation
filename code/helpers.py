@@ -8,6 +8,7 @@ from specinput import wave_to_mel_spec, load_audio, params
 from datagen import get_files_and_labels
 
 from sklearn.metrics import average_precision_score
+from tqdm import tqdm
 
 from audioaug import noise_injection, shift_time, change_pitch, change_speed
 from specaug import freq_mask, time_mask, loud
@@ -254,4 +255,47 @@ def evaluate_model(model, data_generator):
 #     # Calculate mean average precision (MAP)
 #     print("MAP: ", average_precision_score(binary_labels_mat, pred_prob_mat))
     
+
+def preprocess_test_data(input_path, output_path):
+    """
+    Preprocess test data by splitting them into clips 
+    """
     
+    if not os.path.exists(output_path):
+        os.mkdir(output_path)
+    
+    wav_file_list = os.listdir(input_path)
+
+    for sample in wav_file_list:
+        folder_name = sample.split('.')[0]
+        if not os.path.exists(output_path + '/' + folder_name):
+            os.mkdir(output_path + '/' + folder_name)
+    
+    files_test_spec = []
+    strid = 1 # extract a piece ever 1 second
+    subdur = 5 # each piece is 5 seconds long
+
+    for i, sample in tqdm(enumerate(wav_file_list)):
+
+        folder_name = sample.split('.')[0]
+        audio, sr = librosa.load(input_path + sample)
+        y_len = len(audio)
+
+        # Get number of samples for 5 seconds
+        start = 0
+        count = 0
+        
+        while stop < 60:
+            stop = start + subdur
+            audio_dst = audio[int(start * sr) : int(stop * sr)]
+            spec_data = wave_to_mel_spec(audio_dst)
+
+            # save image file
+            output_file = output_path + folder_name +'/' + f'{folder_name}_{count}.npy'
+            np.save(output_file, spec_data)
+            files_test_spec.append(output_file)
+            
+            start = start + strid
+            count += 1
+    
+    return files_test_spec

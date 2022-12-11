@@ -31,7 +31,7 @@ def parse():
     Parse command line arguments 
     """
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "input_path=", "train_val_split=", "output_spec_path=", "aug=", "loss=", "model_path=", "skip_train"])
+        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "input_path=", "train_val_split=", "output_spec_path=", "aug=", "loss=", "model_path=", "skip_train", "test_path", "output_test_path"])
     except getopt.GetoptError as err:
         # print help information and exit:
         print(err)  # will print something like "option -a not recognized"
@@ -45,6 +45,8 @@ def parse():
     output_spec_path = None 
     model_path = None 
     skip_train = False # By default we do not skip model training 
+    test_path = None 
+    output_test_path = None 
     
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -67,10 +69,14 @@ def parse():
             model_path = arg
         elif opt == "--skip_train":
             skip_train = True
+        elif opt == "--test_path":
+            test_path = arg 
+        elif opt == "--output_test_path":
+            output_test_path = arg 
         else:
             assert False, "unhandled option"
     
-    return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train
+    return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train, test_path, output_test_path
 
 
 def train_val_split(data_path, train_split=0.8):
@@ -285,7 +291,7 @@ def train(files_train, files_val, model_path, loss_name, labels, resize_dim=[224
 
 
 
-def evaluate(model_path, files_train_spec, files_val_spec, labels, batch_size=32): 
+def evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, output_test_path, batch_size=32): 
     
     # Load model 
     model_architecture_path = model_path + '/model.json'
@@ -326,6 +332,35 @@ def evaluate(model_path, files_train_spec, files_val_spec, labels, batch_size=32
     print("True negative rate (TNR) / Specificity on validation set: ", TNR_val )
     print("MAP on validation set: ", MAP_val )
     print("Precision on validation set: ", precision_val )
+    
+    # Preprocess test data 
+    files_test_spec = preprocess_test_data(test_path, output_test_path)
+    
+    print(files_test_spec)
+    
+    # Evaluate on test set 
+#     batch_size = 2000 # len(files_test)
+    # test data generator
+    test_generator = TestDataGenerator(files_test_spec,
+                                       resize_dim=resize_dim,
+                                       batch_size=batch_size,
+                                       shuffle=False)
+
+    for batch, _ in tqdm(enumerate(test_generator)):
+        pred_prob = model.predict(test_generator[batch][0])
+        pred_label = 1 * (pred_prob > 0.5)
+        files = [path.split('/')[-1][0:-4] for path in test_generator[batch][1]]
+        if batch > 0:
+            pred_label_all = np.concatenate((pred_label_all, np.column_stack((files, pred_label))), axis=0)
+            pred_prob_all = np.concatenate((pred_prob_all, np.column_stack((files, pred_prob))), axis=0) 
+        else:
+            pred_label_all = np.column_stack((files, pred_label))
+            pred_prob_all = np.column_stack((files, pred_prob))
+    
+    pred_label_df = pd.DataFrame(pred_label_all, columns =['id'] + class_list)
+    pred_label_df.to_csv(model_path+"/prediction_label_test.csv", index=False)
+    pred_prob_df = pd.DataFrame(pred_prob_all, columns =['id'] + class_list)
+    pred_prob_df.to_csv(model_path+"/prediction_prob_test.csv", index=False)
 
 # ------------------------------------------------------------------------------------------------------------------
 
@@ -335,7 +370,7 @@ if __name__ == "__main__":
     # Parse command line arguments 
     print("\n")
     print("------------- Starting parsing arguments -------------")
-    input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train = parse() 
+    input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train, test_path, output_test_path = parse() 
     print("------------- Completing parsing arguments -------------")
     print("\n")
     
@@ -411,7 +446,7 @@ if __name__ == "__main__":
     # Evaluate model 
     print("\n")
     print("---------- Start evaluating model ----------")
-    evaluate(model_path, files_train_spec, files_val_spec, labels)
+    evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, output_test_path)
     print("---------- Complete evaluating model ----------")
 
 

@@ -1,6 +1,8 @@
 import os, sys, getopt, time 
 import json
+
 import numpy as np
+import pandas as pd 
 
 import tensorflow as tf
 from tensorflow.keras import backend as K
@@ -9,12 +11,14 @@ import tensorflow.keras.layers as layers
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.callbacks import ModelCheckpoint, LambdaCallback
 from keras.models import model_from_json
+from tqdm import tqdm
+from sklearn.metrics import average_precision_score, precision_score, recall_score
 
-from datagen import get_files_and_labels, scalespec, preprocess, DataGenerator
+from datagen import get_files_and_labels, scalespec, preprocess, DataGenerator, TestDataGenerator
 from learningrate import warmup_cosine_decay, WarmUpCosineDecayScheduler
 from specinput import wave_to_mel_spec, load_audio, params
 
-from helpers import remove_file, generate_class_freqs, transfer_data, get_spec_data, evaluate_model
+from helpers import remove_file, generate_class_freqs, transfer_data, get_spec_data, evaluate_model, preprocess_test_data, get_slice_test_data
 
 
 def usage():
@@ -31,7 +35,7 @@ def parse():
     Parse command line arguments 
     """
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "input_path=", "train_val_split=", "output_spec_path=", "aug=", "loss=", "model_path=", "skip_train", "test_path", "output_test_path"])
+        opts, args = getopt.getopt(sys.argv[1:], "hi:s:a:l:", ["help", "input=", "input_path=", "train_val_split=", "output_spec_path=", "aug=", "loss=", "model_path=", "skip_train", "test_path=", "output_test_path=", "slice_test_path=", "test_label_path="])
     except getopt.GetoptError as err:
         # print help information and exit:
         print(err)  # will print something like "option -a not recognized"
@@ -47,6 +51,8 @@ def parse():
     skip_train = False # By default we do not skip model training 
     test_path = None 
     output_test_path = None 
+    test_label_path = None 
+    slice_test_path = None 
     
     for opt, arg in opts:
         if opt in ("-h", "--help"):
@@ -73,10 +79,14 @@ def parse():
             test_path = arg 
         elif opt == "--output_test_path":
             output_test_path = arg 
+        elif opt == "--test_label_path":
+            test_label_path = arg
+        elif opt == "--slice_test_path":
+            slice_test_path = arg
         else:
             assert False, "unhandled option"
     
-    return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train, test_path, output_test_path
+    return input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train, test_path, output_test_path, test_label_path, slice_test_path
 
 
 def train_val_split(data_path, train_split=0.8):
@@ -263,18 +273,15 @@ def train(files_train, files_val, model_path, loss_name, labels, resize_dim=[224
 
 
 
-def evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, output_test_path, batch_size=32): 
-    
+def evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, output_test_path, test_label_path, slice_test_path, batch_size=32): 
+    """
+    Evaluate the model on train, validation and test set 
+    """
     # Load model 
     model_architecture_path = model_path + '/model.json'
     model_weight_path = model_path + '/model_best_val.h5' # path of model
     model = model_from_json(open(model_architecture_path).read()) # load architecture
     model.load_weights(model_weight_path) # load weights
-
-#     # Load classes 
-#     class_dict = json.load(open(model_path+"model_classes.json"))
-#     class_list = list(class_dict.values())
-#     len(class_list) # Number of classes
     
     # Create data generators 
     resize_dim = [224, 224] # desired shape of generated images
@@ -289,35 +296,39 @@ def evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, ou
                                   resize_dim=resize_dim,
                                   batch_size=batch_size)
     
-    # Evaluate on train set 
-    accuracy_train, TPR_train, TNR_train, MAP_train, precision_train = evaluate_model(model, train_generator)
-    print("overall accuracy on training set:", accuracy_train)
-    print("True positive rate (TPR) / Recall on training set: ", TPR_train )
-    print("True negative rate (TNR) / Specificity on training set: ", TNR_train )
-    print("MAP on training set: ", MAP_train )
-    print("Precision on training set: ", precision_train )
+#     # Evaluate on train set 
+#     accuracy_train, TPR_train, TNR_train, MAP_train, precision_train = evaluate_model(model, train_generator)
+#     print("overall accuracy on training set:", accuracy_train)
+#     print("True positive rate (TPR) / Recall on training set: ", TPR_train )
+#     print("True negative rate (TNR) / Specificity on training set: ", TNR_train )
+#     print("MAP on training set: ", MAP_train )
+#     print("Precision on training set: ", precision_train )
     
-    # Evaluate on validation set
-    accuracy_val, TPR_val, TNR_val, MAP_val, precision_val = evaluate_model(model, val_generator)
-    print("overall accuracy on validation set :", accuracy_val)
-    print("True positive rate (TPR) / Recall on validation set: ", TPR_val )
-    print("True negative rate (TNR) / Specificity on validation set: ", TNR_val )
-    print("MAP on validation set: ", MAP_val )
-    print("Precision on validation set: ", precision_val )
+#     # Evaluate on validation set
+#     accuracy_val, TPR_val, TNR_val, MAP_val, precision_val = evaluate_model(model, val_generator)
+#     print("overall accuracy on validation set :", accuracy_val)
+#     print("True positive rate (TPR) / Recall on validation set: ", TPR_val )
+#     print("True negative rate (TNR) / Specificity on validation set: ", TNR_val )
+#     print("MAP on validation set: ", MAP_val )
+#     print("Precision on validation set: ", precision_val )
     
-    # Preprocess test data 
-    files_test_spec = preprocess_test_data(test_path, output_test_path)
-    
-    print(files_test_spec)
+    if slice_test_path is None: 
+        # Preprocess test data 
+        print("Start preprocessing test data ...")
+        files_test_spec = preprocess_test_data(test_path, output_test_path)
+        print("Test data preprocessing completed. ")
+    else:
+        files_test_spec = get_slice_test_data(slice_test_path)
     
     # Evaluate on test set 
-#     batch_size = 2000 # len(files_test)
+    
     # test data generator
     test_generator = TestDataGenerator(files_test_spec,
                                        resize_dim=resize_dim,
                                        batch_size=batch_size,
                                        shuffle=False)
 
+    # Predictions on test set
     for batch, _ in tqdm(enumerate(test_generator)):
         pred_prob = model.predict(test_generator[batch][0])
         pred_label = 1 * (pred_prob > 0.5)
@@ -328,11 +339,56 @@ def evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, ou
         else:
             pred_label_all = np.column_stack((files, pred_label))
             pred_prob_all = np.column_stack((files, pred_prob))
+            
+    # Load classes 
+    class_dict = json.load(open(model_path + "model_classes.json"))
+    class_list = list(class_dict.values())
     
     pred_label_df = pd.DataFrame(pred_label_all, columns =['id'] + class_list)
-    pred_label_df.to_csv(model_path+"/prediction_label_test.csv", index=False)
     pred_prob_df = pd.DataFrame(pred_prob_all, columns =['id'] + class_list)
-    pred_prob_df.to_csv(model_path+"/prediction_prob_test.csv", index=False)
+
+    # Generate predicted labels
+    pred_df = pred_label_df
+    pred_df = pred_df.dropna(axis=0, how='all')
+    pred_df["id"]  = [ i[0] for i in pred_df.id.str.split("_").values]
+    pred_df = pred_df.apply(pd.to_numeric)
+    # sum labels among rows within the same test sample 
+    pred_df = pred_df.groupby(by = "id").sum().reset_index() 
+    pred_df = pred_df.sort_values(by = "id")
+    pred_label_arr = np.array(pred_df.iloc[:,1::])
+    pred_label_arr = (pred_label_arr >= 1.) * 1  # the maximum cap is 1
+
+    # Process true labels on test data 
+    true_label_df = pd.read_csv(test_label_path, index_col=False)
+    true_label_df = true_label_df.rename(columns = {"Unnamed: 0": "id"})
+    true_label_df = true_label_df[true_label_df['id'].isin(prediction_label_df['id'])]
+    true_label_df = true_label_df.sort_values(by = "id")[class_list]
+    true_label_arr = np.array(true_label_df)
+
+    # Generate predicted probability 
+    pred_prob = pred_prob_df
+    pred_prob = pred_prob.dropna(axis=0,how='all')
+    pred_prob["id"]  = [ i[0] for i in pred_prob.id.str.split("_").values]
+    pred_prob = pred_prob.apply(pd.to_numeric)
+    # the max prob among rows within the same test sample 
+    pred_prob = pred_prob.groupby(by = "id").max().reset_index() 
+    pred_prob = pred_prob.sort_values(by = "id")
+    pred_prob_arr = np.array(pred_prob.iloc[:,1::])
+
+    # Caculate average precision on test set 
+    ave_precision = precision_score(true_label_arr, pred_label_arr, average='samples')
+    print("Average precision on test set: ", ave_precision)
+
+    # Calculate average recall on test set 
+    ave_recall = recall_score(true_label_arr, pred_label_arr, average='samples')
+    print("Average recall on test set: ", ave_recall)
+
+    # Calculate MAP on test set
+    map_test_data = average_precision_score(true_label_arr, pred_prob_arr) 
+    print("MAP on test set: ", map_test_data )
+    
+
+
 
 # ------------------------------------------------------------------------------------------------------------------
 
@@ -342,7 +398,7 @@ if __name__ == "__main__":
     # Parse command line arguments 
     print("\n")
     print("------------- Starting parsing arguments -------------")
-    input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train, test_path, output_test_path = parse() 
+    input_file_type, input_data_path, train_val_ratio, aug_method, loss_name, output_spec_path, model_path, skip_train, test_path, output_test_path, test_label_path, slice_test_path = parse() 
     print("------------- Completing parsing arguments -------------")
     print("\n")
     
@@ -418,7 +474,8 @@ if __name__ == "__main__":
     # Evaluate model 
     print("\n")
     print("---------- Start evaluating model ----------")
-    evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, output_test_path)
+    evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, output_test_path, test_label_path, slice_test_path)
     print("---------- Complete evaluating model ----------")
+    print("\n")
 
 

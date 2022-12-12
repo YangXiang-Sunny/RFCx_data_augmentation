@@ -247,13 +247,6 @@ def evaluate_model(model, data_generator):
     precision = TP / (TP + FP)
     
     return overall_accuracy, TPR, TNR, MAP, precision
-
-#     print("overall accuracy :", (N - mislabel_count) / N)
-#     print("True positive rate (TPR) / Recall: ", (positive_count - positive_mislabel_count) / positive_count )
-#     print("True negative rate (TNR) / Specificity: ", (negative_count - negative_mislabel_count) / negative_count )
-
-#     # Calculate mean average precision (MAP)
-#     print("MAP: ", average_precision_score(binary_labels_mat, pred_prob_mat))
     
 
 def preprocess_test_data(input_path, output_path):
@@ -276,6 +269,9 @@ def preprocess_test_data(input_path, output_path):
     subdur = 5 # each piece is 5 seconds long
 
     for i, sample in tqdm(enumerate(wav_file_list)):
+        
+        if i % 10 == 0:
+            print("Processing: ", i, " / ", len(wav_file_list))
 
         folder_name = sample.split('.')[0]
         audio, sr = librosa.load(input_path + sample)
@@ -284,9 +280,9 @@ def preprocess_test_data(input_path, output_path):
         # Get number of samples for 5 seconds
         start = 0
         count = 0
+        stop = start + subdur
         
         while stop < 60:
-            stop = start + subdur
             audio_dst = audio[int(start * sr) : int(stop * sr)]
             spec_data = wave_to_mel_spec(audio_dst)
 
@@ -296,6 +292,24 @@ def preprocess_test_data(input_path, output_path):
             files_test_spec.append(output_file)
             
             start = start + strid
+            stop = start + subdur
             count += 1
     
     return files_test_spec
+
+
+def get_slice_test_data(data_path):
+    """
+    Get sliced test data file names 
+    """
+    folder_names = os.listdir(data_path)
+    files_test_spec = []
+    
+    for i, folder in enumerate(folder_names):
+        if i % 100 == 0:
+            print("Processing: ", i, " / ", len(folder_names))
+        file_names = os.listdir(data_path + '/' + folder) 
+        files_test_spec += [data_path + '/' + folder + '/' + file for file in file_names]
+    
+    return files_test_spec
+        

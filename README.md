@@ -3,7 +3,7 @@ The repo includes a pipeline for running data augmentation experiments with audi
 
 ## About 
 
-Tropical ecosystems are particularly characterized by the high number of rare and inconspicuous species. However, it is hard to collect sufficient data samples corresponding to these rare species in the tropical forests, while a good model will require sufficient training data. Therefore, we aim to help RFCx improve the data augmentation process to increase the training data size for rare species, better understand the sounds of rare species, and promote the model performance of rare species. Our project group members are Yang Xiang, Ziye Tao, Li Sun, Yanqi Luo and Meichen Dong, supervised by Jack Lebien, Marconi Campos and Nelson Buainain from Rainforest Connection Team, and Orhan Eren Akgun and Weiwei Pan from Harvard. 
+Tropical ecosystems are particularly characterized by the high number of rare and inconspicuous species. However, it is hard to collect sufficient data samples corresponding to these rare species in the tropical forests, while a good model will require sufficient training data. Therefore, we aim to help RFCx improve the data augmentation process to increase the training data size for rare species, better understand the sounds of rare species, and promote the model performance of rare species. Our project group members are Yang Xiang, Ziye Tao, Li Sun, Yanqi Luo and Meichen Dong, supervised by Jack Lebien, Marconi Campos and Nelson Buainain from Rainforest Connection Team, and Orhan Eren Akgun and Weiwei Pan from [Harvard SEAS](https://seas.harvard.edu/). 
 
 This repo allows you to reproduce some of our experiment results, for both audio augmentation and spectrogram augmentation methods. 
 

@@ -361,7 +361,7 @@ def evaluate(model_path, files_train_spec, files_val_spec, labels, test_path, ou
     # Process true labels on test data 
     true_label_df = pd.read_csv(test_label_path, index_col=False)
     true_label_df = true_label_df.rename(columns = {"Unnamed: 0": "id"})
-    true_label_df = true_label_df[true_label_df['id'].isin(prediction_label_df['id'])]
+    true_label_df = true_label_df[true_label_df['id'].isin(pred_df['id'])]
     true_label_df = true_label_df.sort_values(by = "id")[class_list]
     true_label_arr = np.array(true_label_df)
 
